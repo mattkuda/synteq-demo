@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roll Call</title>
+<style>
+  :root { --accent: #e5533d; --bg: #0e0e10; --card: #17171a; --line: #2a2a30; --text: #f2f2f4; --dim: #9a9aa5; --ok: #3ecf8e; --bad: #ff4d4d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.45 ui-monospace, Menlo, monospace; }
+  main { max-width: 1280px; margin: 0 auto; padding: 32px clamp(16px, 3vw, 48px) 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+  h1 { margin: 0; font-size: clamp(32px, 4vw, 56px); letter-spacing: -0.02em; }
+  h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  #badge { font-size: clamp(32px, 4vw, 56px); font-weight: 700; padding: 2px 24px; border-radius: 14px; color: #0e0e10; background: var(--accent); transition: background .3s; }
+  section { margin-bottom: 28px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px clamp(16px, 2.5vw, 32px); }
+  #hero { border-top: 4px solid var(--accent); }
+  #name { font-size: clamp(36px, 6vw, 96px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 20px; overflow-wrap: anywhere; }
+  #facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 18px 24px; margin: 0; }
+  #facts div { min-width: 0; }
+  #facts dt { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; }
+  #facts dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; }
+  #strip { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 60px; }
+  .sq { width: 18px; height: 18px; border-radius: 5px; flex: none; }
+  .sq.bad { background: var(--bad); color: #0e0e10; font-size: 13px; font-weight: 900; line-height: 18px; text-align: center; }
+  .div { display: flex; align-items: center; gap: 4px; flex: none; margin: 0 6px; padding-left: 8px; height: 26px; border-left: 2px solid var(--accent); font-size: 13px; font-weight: 700; color: var(--accent); }
+  #empty { color: var(--dim); }
+  #counters { display: flex; flex-wrap: wrap; gap: 14px 40px; font-size: 22px; font-weight: 600; }
+  #counters span { white-space: nowrap; }
+  #failed.good { color: var(--ok); }
+  #failed.bad { color: var(--bad); }
+  .row { display: grid; grid-template-columns: 28px minmax(0, 1.6fr) 60px minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); font-size: 20px; }
+  .row:first-child { border-top: 0; }
+  .row .sw { width: 22px; height: 22px; border-radius: 6px; }
+  .row .nm { font-weight: 700; overflow-wrap: anywhere; }
+  .row .dim { color: var(--dim); text-align: right; font-size: 17px; }
+  footer { text-align: center; color: var(--dim); font-size: 14px; margin-top: 8px; }
+  @media (max-width: 720px) {
+    .row { grid-template-columns: 28px 1fr auto; font-size: 17px; }
+    .row .dim:nth-of-type(n+4) { grid-column: 2 / -1; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Roll Call</h1>
+    <div id="badge">&hellip;</div>
+  </header>
+
+  <section>
+    <h2>Answered by</h2>
+    <div class="card" id="hero">
+      <div id="name">Waiting&hellip;</div>
+      <dl id="facts">
+        <div><dt>kernel</dt><dd id="f-kernel">-</dd></div>
+        <div><dt>vCPUs / memory</dt><dd id="f-hw">-</dd></div>
+        <div><dt>VM booted</dt><dd id="f-vm">-</dd></div>
+        <div><dt>app started</dt><dd id="f-app">-</dd></div>
+        <div><dt>requests served</dt><dd id="f-req">-</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <h2>Live traffic</h2>
+    <div class="card"><div id="strip"><span id="empty">waiting for the first response&hellip;</span></div></div>
+  </section>
+
+  <section>
+    <div class="card" id="counters">
+      <span id="ok">0 ok</span>
+      <span id="failed" class="good">0 failed</span>
+      <span id="page-up">page open 0s</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Instances seen</h2>
+    <div class="card" id="instances"><span style="color:var(--dim)">none yet</span></div>
+  </section>
+
+  <footer>each square = one request &middot; each color = one microVM</footer>
+</main>
+
+<script>
+(() => {
+  const MAX_SQUARES = 240, POLL_MS = 500, TIMEOUT_MS = 3000;
+  const $ = (id) => document.getElementById(id);
+  const pageStart = Date.now();
+  let okCount = 0, failCount = 0, squares = 0, lastVersion = null, latest = null;
+  const seen = new Map(); // instance id -> { name, color, version, count, last }
+
+  const FIXED = { v1: "#e5533d", v2: "#2bb3a3", v3: "#8b6cf6" };
+  const accentFor = (v) => {
+    if (FIXED[v]) return FIXED[v];
+    let h = 0;
+    for (const c of String(v)) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return `hsl(${h} 70% 58%)`;
+  };
+  const setAccent = (v) => {
+    document.documentElement.style.setProperty("--accent", accentFor(v));
+    $("badge").textContent = v;
+  };
+  const ago = (sec) => sec < 60 ? `${sec}s` : sec < 3600 ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${Math.floor(sec / 3600)}h ${Math.floor(sec % 3600 / 60)}m`;
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+
+  function addToStrip(node, isSquare) {
+    const strip = $("strip");
+    if ($("empty")) $("empty").remove();
+    strip.appendChild(node);
+    if (!isSquare) return;
+    squares++;
+    while (squares > MAX_SQUARES) {
+      const first = strip.firstChild;
+      if (first.classList.contains("sq")) squares--;
+      first.remove();
+    }
+    while (strip.firstChild && strip.firstChild.classList.contains("div")) strip.firstChild.remove();
+  }
+
+  function onInfo(info) {
+    const now = Date.now();
+    if (lastVersion !== null && info.version !== lastVersion) addToStrip(el("div", "div", info.version), false);
+    if (info.version !== lastVersion) setAccent(info.version);
+    lastVersion = info.version;
+    okCount++;
+    latest = { info, at: now };
+    const sq = el("div", "sq");
+    sq.style.background = info.color;
+    sq.title = `${info.name} ${info.version}`;
+    addToStrip(sq, true);
+    const rec = seen.get(info.instance) || { count: 0 };
+    Object.assign(rec, { name: info.name, color: info.color, version: info.version, last: now });
+    rec.count++;
+    seen.set(info.instance, rec);
+    render();
+  }
+
+  function onFail() {
+    failCount++;
+    const sq = el("div", "sq bad", "✕");
+    sq.title = "request failed";
+    addToStrip(sq, true);
+    render();
+  }
+
+  async function poll() {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch("/api/info", { cache: "no-store", signal: ctl.signal });
+      if (!res.ok) throw new Error("status " + res.status);
+      onInfo(await res.json());
+    } catch (e) {
+      onFail();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function render() {
+    const now = Date.now();
+    if (latest) {
+      const i = latest.info, extra = Math.floor((now - latest.at) / 1000);
+      const n = $("name");
+      n.textContent = i.name;
+      n.style.color = i.color;
+      $("f-kernel").textContent = i.kernel;
+      $("f-hw").textContent = `${i.cpus} / ${i.memoryMb} MB`;
+      $("f-vm").textContent = `${ago(i.vmUptimeSec + extra)} ago`;
+      $("f-app").textContent = `${ago(i.appUptimeSec + extra)} ago`;
+      $("f-req").textContent = i.requestsServed;
+    }
+    $("ok").textContent = `${okCount} ok`;
+    const f = $("failed");
+    f.textContent = `${failCount} failed`;
+    f.className = failCount > 0 ? "bad" : "good";
+    $("page-up").textContent = `page open ${ago(Math.floor((now - pageStart) / 1000))}`;
+
+    if (seen.size) {
+      const box = $("instances");
+      const rows = [...seen.values()].sort((a, b) => b.last - a.last).map((r) => {
+        const row = el("div", "row");
+        const sw = el("div", "sw");
+        sw.style.background = r.color;
+        const nm = el("div", "nm", r.name);
+        nm.style.color = r.color;
+        row.append(sw, nm, el("div", "dim", r.version),
+          el("div", "dim", `${r.count} answered`),
+          el("div", "dim", `last seen ${ago(Math.floor((now - r.last) / 1000))} ago`));
+        return row;
+      });
+      box.replaceChildren(...rows);
+    }
+  }
+
+  setAccent("v1");
+  $("badge").textContent = "…";
+  setInterval(poll, POLL_MS);
+  setInterval(render, 1000);
+  poll();
+})();
+</script>
+</body>
+</html>
