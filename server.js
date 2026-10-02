@@ -21,7 +21,7 @@ const ANIMALS = ["🦊 fox", "🐙 octopus", "🦉 owl", "🐢 turtle", "🦄 un
   "🐳 whale", "🦜 parrot", "🐸 frog", "🦩 flamingo"];
 const n = parseInt(INSTANCE_ID, 16);
 const NAME = `${ANIMALS[n % ANIMALS.length]}-${INSTANCE_ID}`;
-const COLOR = `hsl(${n % 360} 70% 55%)`;
+const COLOR = `hsl(${((n >> 8) % 12) * 30} 70% 55%)`; // 12 well-separated hues
 
 const log = (line) => console.log(`[${VERSION} ${INSTANCE_ID}] ${line}`);
 const html = fs.readFileSync(new URL("./page.html", import.meta.url));
