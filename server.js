@@ -5,6 +5,9 @@ import { randomBytes } from "node:crypto";
 // Bump this, push, and watch the new release take traffic with zero downtime.
 const VERSION = "v1";
 const COLOR = "#e5533d";
+// Flip to false and deploy to ship a "broken" release: the health gate rejects
+// it and the previous release keeps serving. (FAIL_HEALTH=1 does the same.)
+const HEALTHY = true;
 
 const PORT = Number(process.env.PORT ?? 3000);
 const startedAt = Date.now();
@@ -26,7 +29,7 @@ const instance = () => ({
   greeting: process.env.GREETING ?? "Hello from Synteq",
 });
 
-const log = (fields) => console.log(JSON.stringify({ ts: new Date().toISOString(), ...fields }));
+const log = (line) => console.log(`[${VERSION} ${INSTANCE_ID}] ${line}`);
 
 const page = (i) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -57,14 +60,12 @@ const server = http.createServer((req, res) => {
   const t0 = process.hrtime.bigint();
   res.on("finish", () => {
     if (url.pathname === "/healthz") return; // keep probe noise out of the logs
-    log({ level: "info", method: req.method, path: url.pathname, status: res.statusCode,
-      ms: Number(process.hrtime.bigint() - t0) / 1e6, instance: INSTANCE_ID });
+    const ms = (Number(process.hrtime.bigint() - t0) / 1e6).toFixed(1);
+    log(`${req.method} ${url.pathname} ${res.statusCode} ${ms}ms`);
   });
 
   if (url.pathname === "/healthz") {
-    // Set FAIL_HEALTH=1 to ship a "broken" release: the health gate rejects it
-    // and the previous release keeps serving.
-    const ok = process.env.FAIL_HEALTH !== "1";
+    const ok = HEALTHY && process.env.FAIL_HEALTH !== "1";
     res.writeHead(ok ? 200 : 500, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok, version: VERSION }));
   }
@@ -82,10 +83,10 @@ const server = http.createServer((req, res) => {
   res.end(JSON.stringify({ error: "not found" }));
 });
 
-server.listen(PORT, () => log({ level: "info", msg: "listening", port: PORT, version: VERSION }));
+server.listen(PORT, () => log(`listening on :${PORT}`));
 
 // Synteq sends SIGTERM and waits 10s when draining an old release.
 process.on("SIGTERM", () => {
-  log({ level: "info", msg: "SIGTERM received, draining" });
+  log("SIGTERM received, draining");
   server.close(() => process.exit(0));
 });
