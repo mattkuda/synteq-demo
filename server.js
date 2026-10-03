@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 
 // Bump this, git push, and watch the new release take traffic with zero downtime.
-const VERSION = "v2";
+const VERSION = "v1";
 // Flip to false and deploy to ship a "broken" release: the health gate rejects
 // it and the previous release keeps serving. (FAIL_HEALTH=1 does the same.)
 const HEALTHY = true;
