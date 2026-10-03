@@ -21,7 +21,9 @@ const ANIMALS = ["🦊 fox", "🐙 octopus", "🦉 owl", "🐢 turtle", "🦄 un
   "🐳 whale", "🦜 parrot", "🐸 frog", "🦩 flamingo"];
 const n = parseInt(INSTANCE_ID, 16);
 const NAME = `${ANIMALS[n % ANIMALS.length]}-${INSTANCE_ID}`;
-const COLOR = `hsl(${((n >> 8) % 12) * 30} 70% 55%)`; // 12 well-separated hues
+// Distinct hues, none of them red (red squares mean a failed request).
+const HUES = [45, 90, 135, 165, 195, 220, 250, 280, 305];
+const COLOR = `hsl(${HUES[(n >> 8) % HUES.length]} 70% 55%)`;
 
 const log = (line) => console.log(`[${VERSION} ${INSTANCE_ID}] ${line}`);
 const html = fs.readFileSync(new URL("./page.html", import.meta.url));
